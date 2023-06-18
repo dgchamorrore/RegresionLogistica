@@ -1,0 +1,323 @@
+---
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+```
+
+\begin{center}
+{\scshape\Huge Entrega 1\par}
+\vfill
+{\LARGE\LARGE Contextualización del problema, presentación de los datos y posible solución \par}
+\vfill
+{\scshape\Large ESTADÍSTICA BAYESIANA  \par}
+{\scshape\Large 2023-1 \par}
+\vfill
+\begin{figure}
+  \center
+  \includegraphics[width=6cm, height=4cm]{Escudo_UN}
+\end{figure}
+\vspace{1cm}
+{\LARGE Dayra Gabriela Chamorro R. - Juan Manuel Saldarriaga V. \par}
+\vfill
+{\bfseries\LARGE Universidad Nacional de Colombia \par}
+{\bfseries\LARGE Sede Medellín \par}
+{\scshape\Large Facultad de Ciencias \par}
+\vfill
+{\Large Medellín, mayo 2023 \par}
+
+\end{center}
+ 
+\newpage
+
+# Problema  
+
+**Hospitalización de niños menores a 5 años en estado de desnutrición aguda.**
+
+
+## Descripción del problema
+
+El segundo objetivo de la ONU para 2030 es poner fin al hambre, bebido a que las estimaciones actuales indican que cerca de 690 millones de personas en el mundo padecen hambre (medido por la prevalencia de desnutrición), y alrededor de 135 millones de personas padecen hambre severa.
+
+Catalogada como una enfermedad de origen social, la desnutrición está ligada a las condiciones sociales, económicas, políticas y culturales.  Afecta principalmente a los niños y a las niñas, la ONU reporto que cada año el 45% de las muertes en los niños menores de 5 años es por desnutrición, esta enfermedad perjudica el buen funcionamiento del organismo, el cual puede llegara a generar trastornos del crecimiento, retrasos motores, cognitivos y psicosociales, en algunos casos son irreversibles.
+
+Colombia es el único país de Suramérica que figura entre los ‘focos del hambre’ en el mundo. En 2022, según el Instituto Nacional de Salud (INS) había un total de 21.337 casos de desnutrición aguda en la primera infancia reportados por las instituciones de salud en ese año.
+
+Las principales causas de la DNT es consumo insuficiente en cantidad y calidad de alimentos, por ejemplo, la ausencia o inadecuada lactancia materna y las malas prácticas en alimentación complementaria, factores de riesgo como el bajo peso y talla actual, el bajo peso y talla al nacer, además de algunos determinantes sociales y económicas.
+
+# Objetivo
+
+Ahora bien, si el estado de desnutrición aguda ya es alarmante, los niños que son hospitalizados se encuentran en un estado muy preocupante, que incluso puede terminar en la muerte.
+
+Nuestro propósito es predecir si un niño, menor a 5 años, que se encuentra en estado de desnutrición aguda confirmada por la clínica es o no hospitalizado, basándonos en información del infante (edad, sexo, comuna, régimen de seguridad social, peso y talla de nacimiento, semanas de gestación, tiempo de alimentación con leche materna o complementaria, esquema de vacunas, peso y talla actual) y así poder prevenir o advertir la gravedad de la situación.
+
+
+# Base de datos
+
+Fuente bases de datos: Medata.
+
+Obtenida de <http://medata.gov.co/dataset/desnutrici%C3%B3n-aguda-en-menores-de-5-a%C3%B1os/resource/98a469e3-60dd-44d3-9a33-01a1a08862d3>.
+
+Inicialmente base de datos tiene 26 variables con 2802 registros tomados entre el 2016 y 2021, en todo el municipio de Medellín, restringida por el evento de desnutrición aguda confirmado por clínica. 
+
+```{r, message=FALSE}
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(readxl)
+library(stringr)
+library(GGally)
+```
+
+
+```{r, message=FALSE}
+desnutricion <- read_delim("sivigila_desnutricion.csv", 
+    delim = ";", escape_double = FALSE, trim_ws = TRUE)
+```
+# Selección de variables
+
+Las variables como id y código de aseguradora no tienen información relevante. Las columnas de tipo de caso y evento son constantes, otras como el perímetro branquial tiene muchos valores en 0, lo cual no tiene sentido, al igual que las fechas de consulta e inicio de síntomas reportan en el año 1900, por lo tanto, se excluyen.
+
+
+```{r}
+bd <- desnutricion[,c(3:5, 7:8, 13:18, 20, 22:23)]
+names(bd)
+```
+
+
+# Tratamiento de datos
+
+Para calcular la edad (en meses) del niño atendido vamos a usar la variable **edad** y hacer la conversión a las unidades correspondientes, teniendo en cuenta la unidad de medición (**Unidad_med**): 0=No aplica, 1=Años, 2=Meses, 3=Días, 4=Horas, 5=Minutos SD=Sin información.
+
+
+```{r}
+#Edad en meses
+unique(bd$uni_med_)# 1, 2, 3
+
+bd$edad_en_meses <- ifelse(bd$uni_med_ == 1, bd$edad_*12, 
+                           ifelse(bd$uni_med_ == 2, bd$edad_*1, 
+                                  ifelse(bd$uni_med_ == 3, bd$edad_/30.417, 0)))
+bd$edad_en_meses <-round(bd$edad_en_meses, 2)
+```
+
+Para la variable **comunas**, unificamos nombres repetidos.
+
+```{r}
+#comuna
+
+bd <- bd %>%
+  mutate(comuna = tolower(comuna))
+##unificamos nombres
+bd$comuna <- recode(bd$comuna, 
+                    "san sebastian de palmitas" = "corregimiento de palmitas",
+                    "altavista" = "corregimiento de altavista", 
+                    "san antonio de prado" = "corregimiento de san antonio de prado") 
+```
+
+Para las variables **peso_nac, talla_nac, edad_ges, peso_act** y **talla_act**, no tiene sentido que tome valores de 0, por tanto, eliminamos esas observaciones. Además, algunas observaciones del peso actual no tienen el decimal.
+
+```{r}
+base <- subset(bd, peso_nac != 0 & talla_nac != 0 & edad_ges != 0 & 
+                 peso_act != 0 & talla_act != 0 )
+
+##Corrección del error del peso actual 
+
+base$peso_act <- ifelse(base$peso_act > 17.3, base$peso_act/10, base$peso_act)
+
+base <- base[, -c(1, 2)] #BASE FINAL
+head(base)
+dim(base)
+```
+Finalmente, obtenemos una base con 2229 observaciones y 13 variables (8 numéricas y 5 categóricas).
+
+# Analisis de nulos
+```{r}
+round((colMeans(is.na(base)) * 100), 2)
+```
+La base de datos no presenta valores nulos.
+
+# Analisis descriptivo
+
+```{r}
+# var numericas
+
+summary(base[, c(13,7,8,9,5,6,11,12)])
+
+```
+Los valores se encuentran dentro de lo esperado.
+
+```{r}
+#Por género
+t1f <- prop.table(table(base$sexo_))
+
+text(x = barplot(t1f, main="Casos de desnutricion aguda",
+     xlab="Sexo", ylab="Frecuencia", 
+     col = c("purple2", "skyblue2")), 
+     y = t1f, labels = paste(round(t1f*100, 2), "%"), pos = 1)
+
+
+```
+Evidentemente se registran más casos de DNT aguda en los niños.
+
+
+Los casos reportados en los corregimientos de Medellín son muy pocos en comparación a las comunas, lo cual implica que en las zonas urbanas sea más propenso a encontrar casos de desnutrición aguda en menores de 5 años.  
+
+```{r}
+# Por comuna
+t2 <- sort(prop.table(table(base$comuna)))
+
+par(mar = c(5, 11, 4, 2))
+barplot(t2, main="Casos de desnutricion aguda por comunas de Medellin",
+     xlab="Frecuencia", col = "#EE9572", las = 1, horiz = TRUE, cex.names = 0.6)
+
+
+```
+```{r}
+#Separaciones por zona rurales y urbanas
+base1 <- base #Creo una base nueva para no afectar la original
+base1$comuna <- ifelse(base1$comuna =="corregimiento de altavista" |
+                         base1$comuna == "corregimiento de palmitas" | 
+                         base1$comuna == "corregimiento de san antonio de prado" |
+                         base1$comuna == "corregimiento de san cristobal" |
+                         base1$comuna == "corregimiento de santa elena", 
+                       "Zona rural", "Zona urbana")
+t3f <- prop.table(table(base1$comuna))
+
+text(x = barplot(t3f, main="Casos de desnutricion por zona",
+      xlab="Zona", ylab="Frecuencia", 
+      col = c("#458B00", "darkgoldenrod2")), 
+     y = t3f, labels = paste(round(t3f*100, 2), "%"), pos = 1)
+
+
+```
+
+# Respecto a nuestra variable respuesta Y: Pacienente hospitalizado
+
+```{r}
+#Proporción de pacientes hospitalizados
+proporcion <- prop.table(table(base$pac_hos_))
+
+text(x =barplot(proporcion, main = "Frecuencia de pacientes hospitalizados",
+        xlab = "Casos",
+        ylab = "Frecuencia", 
+        col = c("brown2", "#87CEEB")),
+     y = proporcion, labels = paste(round(proporcion*100, 2), "%"), pos = 1)
+```
+
+```{r}
+table(base$edad_ges)
+t4 <- table(base$pac_hos_, cut(base$edad_ges, breaks = seq(24,44, by = 4)))
+t4f <- prop.table(t4)
+
+barplot(t4f, main = "Edad de gestacion vs Paciente hospitalizado",
+        xlab = "Semanas de gestacion",
+        ylab = "Frecuencia", 
+        col = c("brown2", "#87CEEB"))
+legend(x = "topright", legend = c("Si", "No"), fill = c("brown2", "#87CEEB"), 
+       title = "Hospitalizado")
+t4f
+```
+
+
+La mayoria de infantes con DNT aguda son menores de 1 año, y los que más son hospitalizados.
+
+```{r, message=FALSE}
+# Pacientes hospitalizados por rangos de edad
+tabla <- table(base$pac_hos_ ,cut(base$edad_en_meses, breaks = seq(0,48, by = 12)))
+t5f <- prop.table(tabla)
+
+barplot(t5f, main = "Pacientes hospitalizados por rango de edades", 
+        xlab = "Edades", ylab="Frecuencia", col = c("brown2", "#87CEEB"), 
+        )
+legend(x = "topright", legend = c("Si", "No"), fill = c("brown2", "#87CEEB"), 
+       title = "Hospitalizado")
+t5f
+```
+
+```{r}
+tablass <- prop.table(table(base$pac_hos_, base$tipo_ss_))
+barplot(tablass,main = "Paciente Hospitalizado por Seguridad Social",
+         xlab = "Seguridad Social",
+         ylab = "Cantidad de Pacientes",
+        col = c("brown2", "#87CEEB"),)
+legend(x = "topright", legend = c("Si", "No"), fill = c("brown2", "#87CEEB"), 
+       title = "Hospitalizado")
+
+
+tablass
+```
+Teniendo en cuenta las categorias: C= Contributivo, S=Subsidiado, P=Excepción, E=Especial, N= No asegurado, I= Indeterminado/Pendiente, SD=Sin informacion.
+
+La mayoria de pacientes atendidos pertenecian a los regimenes contributivo, seguido del subcidiado.
+
+
+
+```{r}
+par(mfrow = c(1, 2))
+
+#peso nacimiento y hospitalizacion
+boxplot(base$peso_nac ~ base$pac_hos_, data = base, 
+        col = c("brown2", "#87CEEB"),
+        xlab = "Paciente hospitalizado", ylab = "Peso de Nacimiento",
+        main = "Y vs Peso de Nacimiento")
+
+# peso actual y hospitalizacion
+boxplot(base$peso_act ~ base$pac_hos_, data = base,
+        col = c("brown2", "#87CEEB"),
+        xlab = "Paciente hospitalizado", ylab = "Peso actual",
+        main = "Y vs Peso actual")
+```
+Cabe resaltar que no se observa una diferencia entre los pacientes que fueron o no hospitalizados respecto al peso que tuvieron al nacer. Podriamos decir que el peso actual es determinante para que un paciente sea o no hospitalizado, pero las cajas se traslapan por lo tanto no existen diferencias significativas.
+
+```{r}
+par(mfrow = c(1, 2))
+
+#talla nacimiento y hospitalización
+boxplot(base$talla_nac ~ base$pac_hos_, data = base, 
+        col = c("brown2", "#87CEEB"),
+        xlab = "Paciente hospitalizado", ylab = "Talla de Nacimiento",
+        main = "Y vs Talla de nacimiento")
+
+# talla actual y hospitalizacion
+boxplot(base$talla_act ~ base$pac_hos_, data = base,
+        col = c("brown2", "#87CEEB"),
+        xlab = "Paciente hospitalizado", ylab = "Talla actual",
+        main = "Y vs Talla actual")
+```
+```{r}
+par(mfrow = c(1, 2))
+
+#Alimentación materna y hospitalización
+boxplot(base$t_lechem ~ base$pac_hos_, data = base, 
+        col = c("brown2", "#87CEEB"),
+        xlab = "Paciente hospitalizado", ylab = "Tiempo de leche materna",
+        main = "Y vs Tiempo de leche materna")
+
+# Alimentación complementaria y hospitalizacion
+boxplot(base$e_complem ~ base$pac_hos_, data = base,
+        col = c("brown2", "#87CEEB"),
+        xlab = "Paciente hospitalizado", ylab = "Tiempo alimentacion complementaria",
+        main = "Tiempo alimentacion complementaria")
+```
+
+
+# Posible solución
+
+Siendo nuestra variable respuesta Y: Paciente hospitalizado (*pac_hos*), variable dicotómica, implementaríamos un modelo de regresión logístico dado que nos permitiría estimar la probabilidad de que un niño menor a 5 años sea hospitalizado o no.
+
+
+
+# Referencias
+
+* <https://www.un.org/sustainabledevelopment/es/hunger/>
+
+* <https://www.unisabana.edu.co/portaldenoticias/al-dia/como-esta-la-desnutricion-infantil-en-colombia/>
+
+* <https://www.minsalud.gov.co/sites/rid/Lists/BibliotecaDigital/RIDE/VS/PP/SNA/abc-desnutricion-aguda.pdf>
+
+* <https://www.eltiempo.com/colombia/otras-ciudades/hambre-y-desnutricion-se-han-agravado-en-colombia-735774>
+

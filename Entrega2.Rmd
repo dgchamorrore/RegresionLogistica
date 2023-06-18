@@ -1,0 +1,1139 @@
+---
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+```
+
+\begin{center}
+{\scshape\Huge Entrega 1\par}
+\vfill
+{\LARGE\LARGE Resultados iniciales, modelos y métodos seleccionados \par}
+\vfill
+{\scshape\Large ESTADÍSTICA BAYESIANA  \par}
+{\scshape\Large 2023-1 \par}
+\vfill
+\begin{figure}
+  \center
+  \includegraphics[width=6cm, height=4cm]{Escudo_UN}
+\end{figure}
+\vspace{1cm}
+{\LARGE Dayra Gabriela Chamorro R. \par}
+\vfill
+{\bfseries\LARGE Universidad Nacional de Colombia \par}
+{\bfseries\LARGE Sede Medellín \par}
+{\scshape\Large Facultad de Ciencias \par}
+\vfill
+{\Large Medellín, junio 2023 \par}
+
+\end{center}
+ 
+\newpage
+
+```{r, message=FALSE}
+library(readr)
+library(rstan)
+library(HDInterval)
+```
+
+# Problema  
+*Hospitalización de niños menores a 5 años en estado de desnutrición aguda. *
+
+# Objetivo
+
+Ahora bien, si el estado de desnutrición aguda ya es alarmante, los niños que son hospitalizados se encuentran en un estado muy preocupante, que incluso puede terminar en la muerte.
+
+Nuestro propósito es predecir si un niño, menor a 5 años, que se encuentra en estado de desnutrición aguda confirmada por la clínica es o no hospitalizado, así poder prevenir o advertir la gravedad de la situación, para ello se formularan algunos modelos logísticos Bayesianos, se elegirá el mejor comparando los modelos propuestos implementando BF, LOO y WAIC.
+
+# Modelo logistico 
+
+Modelar una variable de respuesta binaria en función de una o más variables predictoras. el modelo logístico esta dado por:
+
+$$\pi_i = \frac{e^{X^t_i\beta}}{1 + e^{X^t_i\beta}}$$
+Donde $\pi_i$ es la probabilidad de que la variable de respuesta sea 0 o 1.
+
+con $Y_i = paciente  \ \ hospitalizado \ \ 0: Si \ \ 1: No $
+
+# Base de datos depurada
+
+
+```{r, message=FALSE}
+
+bf <- read_csv("baseFinal.csv")
+bf <- bf[,-1]
+bf <- bf[,c(2,1,5,3,4,6,7,11,9,10,8,12,13)] #base organizada
+dim(bf)
+head(bf)
+
+```
+#---------Gráficas para el articulo----------------
+
+
+
+
+```{r,fig.height=5, fig.width=5}
+T1 <- sort(prop.table(table(bf$zona)), decreasing = T)
+
+
+text(x = barplot(T1, main="Zonas", 
+      xlab="Zona", ylab="Frecuencia", 
+      col = c("#BC8F8F","#CAFF70", "#A2B5CD"), ylim = c(0,1)),
+     y = T1, labels = paste(round(T1*100, 2), "%"), pos = 3)
+
+
+```
+```{r, fig.height=4, fig.width=4}
+#library(lessR)
+T2 <- prop.table(table(bf$sexo_))
+
+PieChart(T2, hole = 0, values = "%", data = T2,
+         fill = c("#FFB5C5","#ffff81"), 
+         main = "Proporción Sexo", values_color="black", cex = 0.9)
+
+```
+
+```{r, fig.height=5, fig.width=5}
+T3 <- sort(prop.table(table(bf$tipo_ss_2)), decreasing = T)
+
+
+text(x = barplot(T3, main="Tipo de Seguridad social", 
+      xlab="Seguridad social", ylab="Frecuencia", 
+      col = c("#8B4513", "#8B3E2F", "#8B6508"), ylim = c(0,1)),
+     y = T3, labels = paste(round(T3*100, 2), "%"), pos = 3)
+
+```
+
+```{r, fig.height=5, fig.width=5}
+T4 <-  prop.table(table(bf$pac_hos_))
+names(T4) <- c("SI", "NO")
+T4
+text(x = barplot(T4, main="Frecuencia Paciente hospitalizado", 
+      xlab="Paciente hospitalizado", ylab="Frecuencia", 
+      col = c("#FA8072", "#87CEFA"), ylim = c(0,1)),
+     y = T4, labels = paste(round(T4*100, 2), "%"), pos = 3)
+
+?barplot()
+```
+```{r, fig.height=5, fig.width=5}
+# Esquema de vacunación vs Paciente hospitalizado
+t5 <- prop.table(table(bf$pac_hos_, bf$esq_vac))
+colnames(t5) <- c("SI", "NO", "Desconocido")
+rownames(t5) <- c("SI", "NO")
+t5
+
+text(x= barplot(t5, beside=TRUE, 
+        main="Esquema de vacunación vs Paciente hospitalizado",
+        xlab="Esquema completo", ylab="Frecuencia",
+        col = c("#FA8072", "#87CEFA"),legend = rownames(t5),
+        ylim = c(0,1), cex.main = 1),y= t5,
+     labels = paste(round(t5*100, 2), "%"), pos = 3, cex = 0.8)
+
+```
+```{r, fig.height=5, fig.width=5}
+# S.S vs Paciente hospitalizado
+t6 <- prop.table(table(bf$pac_hos_, bf$tipo_ss_2))
+rownames(t6) <- c("SI", "NO")
+t6 <- t6[,c(1,3,2)]
+
+t6
+
+text(x= barplot(t6, beside=TRUE, 
+        main="Seguridad Social vs Paciente hospitalizado",
+        xlab="Tipo de Seguridad Social ", ylab="Frecuencia",
+        col = c("#FA8072", "#87CEFA"),legend = rownames(t6),
+        ylim = c(0,1), cex.main = 1),y= t6,
+     labels = paste(round(t6*100, 2), "%"), pos = 3, cex = 0.8)
+
+```
+
+# Tablas de contingencia
+
+```{r}
+T7 <- table(bf$pac_hos_, bf$sexo_)
+T7
+
+T8 <- table(bf$pac_hos_, bf$zona)
+T8
+
+
+```
+
+#--------------------------------------------------
+# Variables categóricas a dummys
+```{r}
+# VARIABLE RESPUESTA
+unique(bf$pac_hos_)
+
+bf$pac_hos_ <- ifelse(bf$pac_hos_== 1,0,1) # 0:1(si), 1:2(No)
+
+# --------------------sexo--------------------
+bf$sexo_ <- ifelse(bf$sexo_ == "F", 0, 1) 
+##0: Femenino, 1: Masculino
+
+# -------------------Zona---------------------
+bf$zona <- ifelse(bf$zona == "Zona urbana", 0, 
+                  ifelse(bf$zona == "Zona rural", 1, 2))
+## 0:Zona urbana, 1:Zona rural, 2:sin identificar
+
+# ----------------tipo SS---------------------
+bf$tipo_ss_2 <- ifelse(bf$tipo_ss_2 == "Contributivo", 0, 
+                       ifelse(bf$tipo_ss_2 == "Subsidiado", 1, 2)) 
+## 0:Contributivo, 1:Subsidiado, 2:Otros
+
+#-------------esquema vacunación-------------
+## 1(SI), 2(NO), 3(DESCONOCIDO)
+
+head(bf)
+```
+
+
+
+#-------------------------------------------------
+
+```{r}
+str(bf) # todo en num
+```
+
+
+```{r}
+#var respuesta
+y <- bf$pac_hos_
+
+# var categoricas
+x1 <- as.factor(bf$sexo_)
+x2 <- as.factor(bf$zona)
+x3 <- as.factor(bf$tipo_ss_2)
+x4 <- as.factor(bf$esq_vac)
+
+# var continuas
+
+x5 <- bf$edad_ges
+x6 <- bf$peso_nac
+x7 <- bf$talla_nac
+x8 <- bf$t_lechem
+x9 <- bf$e_complem
+x10 <- bf$edad_act
+x11 <- bf$peso_act
+x12 <- bf$talla_act
+
+```
+# Resumen de variables
+
+```{r, echo=FALSE}
+knitr::include_graphics("Tabla_1.jpg")
+```
+
+# Modelos propuestos.
+
+# Modelo 1: Ajuste Bayesiano con todas las variables.
+
+$$Modelo~1:Y \sim X_1 + X_2 + X_3 + X_4 + X_5 + X_6 + X_7 + X_8 + X_9 + X_{10} + X_{11} + X_{12}$$
+
+## Matriz de diseño:
+```{r}
+X = model.matrix(~ x1 + x2 + x3 + x4 + x5 + x6
+                 + x7 + x8 + x9 + x10 + x11 + x12 ) #MATRIZ DE DISEÑO
+
+head(X)
+```
+
+Tenemos 16 parámetros con el intercepto.
+
+```{r}
+stan_data <- list(
+  
+  "X" = X,
+  
+  "y" = y,
+  
+  "N" = nrow(bf), # Numero de observaciones
+  "p" = ncol(X) # numero de varaibles
+)
+```
+
+
+# Inferencia para los $\beta_i$ usando *stan*
+
+```{r}
+fit <- stan(file = 'ModeloLogistico.stan', data = stan_data, chains = 3)
+print(fit)
+```
+
+
+```{r}
+Beta.poste.M1 <- extract(fit, "beta")
+Beta.poste.M1 <- Beta.poste.M1[[1]]
+dim(Beta.poste.M1)
+```
+
+## Análisis de convergencia:
+
+El Rhat es igual a 1, lo cual indica que las 3 cadenas han convergido de manera adecuada. Un warmup=1000 indica el quemado de la cadena.
+
+### Diagnóstico
+
+```{r}
+#TRACE PLOTS
+traceplot(fit, pars = "beta")
+
+```
+
+Se evidencia estacionariedad, se observa convergencia en todas y cada una de las variables incluidas, lo cual implica que un análisis sobre la muestra usada es adecuado.
+
+
+# Densidad Posterior
+
+## Intervalos de probabilidad posterior
+
+A continuación, se grafican los HDI para el análisis de significancia de los parámetros, si el 0 se incluye en el intervalo $\beta_i$ es NO significativo.
+
+
+```{r}
+par(mfrow=c(3,3))
+for(i in 1:16){
+  #Inicio
+  HDI.interval.beta <- hdi(Beta.poste.M1[,i])
+  value1 <- HDI.interval.beta[1]
+  value2 <- HDI.interval.beta[2]
+  DENSITITY.BETA <- density(Beta.poste.M1[,i])
+  plot(DENSITITY.BETA, main = "Densidad Posterior",
+       xlab = parse(text=(paste0("beta[",i-1,"]"))))
+  DENSITITY.BETAy <- DENSITITY.BETA$y
+  DENSITITY.BETAx <- DENSITITY.BETA$x
+  # Lower and higher indices on the X-axis
+  l <- min(which(DENSITITY.BETAx >= value1))
+  h <- max(which(DENSITITY.BETAx < value2))
+  
+  polygon(c(DENSITITY.BETAx[c(l, l:h, h)]),
+          c(0, DENSITITY.BETAy[l:h], 0),
+          col =  "#CD3700")
+}
+```
+
+De las gráficas de intervalos de probabilidad posterior podemos concluir:
+
+* Los parámetros $\beta_2, ~\beta_3, ~\beta_5,~ \beta_8, ~\beta_9, ~\beta_{10},~ \beta_{11}, ~\beta_{12}$ y $\beta_{13}$ incluyen al 0 en su intervalo de probabilidad, por lo tanto **No son significativos**.
+
+* Los parámetros $\beta_0(Intercepto),~ \beta_1, ~\beta_4, ~\beta_6, ~\beta_7, ~ \beta_{14}$ y $\beta_{15}$ **son significativos**. 
+
+# Resultados ajuste Bayesiano:
+
+
+```{r, echo=FALSE}
+knitr::include_graphics("Modelo1.jpg")
+```
+
+# ---------------------------------------------------------------------------------------
+
+# Modelo 2 con ajuste Bayesiano
+
+Se toman las variables significativas del Modelo 1.  
+
+
+$$Modelo~2: Y \sim X_1 +  X_3 + X_4 + X_{11} + X_{12}$$
+
+## Matriz de diseño
+
+```{r}
+#----------------MATRIZ DE DISEÑO-----------------------
+X2 = model.matrix(~ x1 + x3 + x4 + x11 + x12 ) 
+head(X2)
+```
+
+Tenemos 8 parámetros con el intercepto.
+
+```{r}
+#------------------- stan ------------------------------
+
+stan_data_2 <- list(
+  
+  "X" = X2,
+  
+  "y" = y,
+  
+  "N" = nrow(bf), # Numero de observaciones
+  "p" = ncol(X2) # numero de varaibles
+)
+
+#-----------------Inferencia para los beta_i-------------
+fit2 <- stan(file = 'ModeloLogistico.stan', data = stan_data_2, chains = 3)
+print(fit2)
+
+#------------ FACTOR DE BAYES ----------------------
+
+Beta.poste.M2 <- extract(fit2, "beta")
+Beta.poste.M2 <- Beta.poste.M2[[1]]
+dim(Beta.poste.M2)
+
+```
+
+## Análisis de convergencia:
+
+El Rhat es igual a 1, lo cual indica que las 3 cadenas han convergido de manera adecuada.
+
+### Diagnóstico
+
+```{r}
+#TRACE PLOTS
+traceplot(fit2, pars = "beta")
+```
+
+Se evidencia estacionariedad, se observa convergencia en todas y cada una de las variables incluidas, lo cual implica que un análisis sobre la muestra usada es adecuado.
+
+## Intervalos de probabilidad posterior
+
+A continuación, se grafican los HDI para el análisis de significancia de los parámetros, si el 0 se incluye en el intervalo $\beta_i$ es NO significativo.
+
+
+```{r}
+par(mfrow=c(3,3))
+for(i in 1:8){
+  #Inicio
+  HDI.interval.beta <- hdi(Beta.poste.M2[,i])
+  value1 <- HDI.interval.beta[1]
+  value2 <- HDI.interval.beta[2]
+  DENSITITY.BETA <- density(Beta.poste.M2[,i])
+  plot(DENSITITY.BETA, main = "Densidad Posterior",
+       xlab = parse(text=(paste0("beta[",i-1,"]"))))
+  DENSITITY.BETAy <- DENSITITY.BETA$y
+  DENSITITY.BETAx <- DENSITITY.BETA$x
+  # Lower and higher indices on the X-axis
+  l <- min(which(DENSITITY.BETAx >= value1))
+  h <- max(which(DENSITITY.BETAx < value2))
+  
+  polygon(c(DENSITITY.BETAx[c(l, l:h, h)]),
+          c(0, DENSITITY.BETAy[l:h], 0),
+          col =  "#FF7F50")
+}
+```
+
+De las gráficas de intervalos de probabilidad posterior podemos concluir:
+
+* Los parámetros $\beta_3$ incluye al 0 en su intervalo de probabilidad, por lo tanto **No es significativos**.
+
+* Los parámetros $\beta_0(Intercepto),~ \beta_1, ~\beta_2, ~\beta_4, ~\beta_5, ~ \beta_6$ y $\beta_7$ **son significativos**. 
+
+# Resultados ajuste Bayesiano:
+
+
+```{r, echo=FALSE}
+knitr::include_graphics("Modelo2.jpg")
+```
+
+
+# ---------------------------------------------------------------------------------------
+
+# Modelo 3 con ajuste Bayesiano
+
+Se propone otro modelo con variables actuales, suponiendo que estas predominan sobre el estado actual del menor de 5 años con desnutrición aguda, se excluyen las variables sociales (Zona, tipo_ss).
+
+
+$$Modelo ~3:Y \sim X_1 + X_4 + X_{10} + X_{11} + X_{12}$$
+
+## Matriz de diseño
+
+```{r, echo = FALSE}
+#----------------MATRIZ DE DISEÑO-----------------------
+X3 = model.matrix(~ x1 +  x4 + x10 + x11 + x12 ) 
+head(X3)
+```
+Tenemos 7 parámetros con el intercepto.
+
+```{r, echo=FALSE, message=FALSE}
+#------------------- stan ------------------------------
+
+stan_data_3 <- list(
+  
+  "X" = X3,
+  
+  "y" = y,
+  
+  "N" = nrow(bf), # Numero de observaciones
+  "p" = ncol(X3) # numero de varaibles
+)
+
+#-----------------Inferencia para los beta_i-------------
+fit3 <- stan(file = 'ModeloLogistico.stan', data = stan_data_3, chains = 3)
+print(fit3)
+
+#------------ POSTERIOR ----------------------
+
+Beta.poste.M3 <- extract(fit3, "beta")
+Beta.poste.M3 <- Beta.poste.M3[[1]]
+dim(Beta.poste.M3)
+
+```
+
+## Análisis de convergencia:
+
+El Rhat es igual a 1, lo cual indica que las 3 cadenas han convergido de manera adecuada.
+
+### Diagnóstico
+
+```{r}
+#TRACE PLOTS
+traceplot(fit3, pars = "beta")
+```
+
+Se evidencia estacionariedad, se observa convergencia en todas y cada una de las variables incluidas, lo cual implica que un análisis sobre la muestra usada es adecuado.
+
+## Intervalos de probabilidad posterior
+
+A continuación, se grafican los HDI para el análisis de significancia de los parámetros, si el 0 se incluye en el intervalo $\beta_i$ es NO significativo.
+
+
+```{r, echo = FALSE}
+par(mfrow=c(3,3))
+for(i in 1:7){
+  #Inicio
+  HDI.interval.beta <- hdi(Beta.poste.M3[,i])
+  value1 <- HDI.interval.beta[1]
+  value2 <- HDI.interval.beta[2]
+  DENSITITY.BETA <- density(Beta.poste.M3[,i])
+  plot(DENSITITY.BETA, main = "Densidad Posterior",
+       xlab = parse(text=(paste0("beta[",i-1,"]"))))
+  DENSITITY.BETAy <- DENSITITY.BETA$y
+  DENSITITY.BETAx <- DENSITITY.BETA$x
+  # Lower and higher indices on the X-axis
+  l <- min(which(DENSITITY.BETAx >= value1))
+  h <- max(which(DENSITITY.BETAx < value2))
+  
+  polygon(c(DENSITITY.BETAx[c(l, l:h, h)]),
+          c(0, DENSITITY.BETAy[l:h], 0),
+          col =  "darkolivegreen1")
+}
+```
+
+De las gráficas de intervalos de probabilidad posterior podemos concluir:
+
+* Los parámetros $\beta_4$ incluye al 0 en su intervalo de probabilidad, por lo tanto **No es significativos**.
+
+* Los parámetros $\beta_0(Intercepto),~ \beta_1, ~\beta_2, ~\beta_3, ~\beta_5$ y $\beta_6$ **son significativos**. 
+
+# Resultados ajuste Bayesiano Modelo 3:
+
+```{r, echo=FALSE}
+knitr::include_graphics("Modelo3.jpg")
+```
+
+# ---------------------------------------------------------------------------------------
+
+# Modelo 4 con ajuste Bayesiano
+
+Se excluyen las variables de tiempo de alimentación materna y complementaria, Edad actual (inicialmente se planteo un modelo incluyendo esta variable pero su estimación due de 0.00).
+
+$$Modelo ~4:Y \sim X_1 + X_2 + X_3 + X_4 + X_5 + X_6 + X_7  + X_{11} + X_{12}$$
+
+## Matriz de diseño
+
+```{r}
+#----------------MATRIZ DE DISEÑO-----------------------
+X4 = model.matrix(~ x1 + x2 + x3 + x4 + x5 + x6
+                 + x7  + x11 + x12 ) 
+head(X4)
+```
+Tenemos 13 parámetros incluyendo el intercepto.
+
+```{r}
+#------------------- stan ------------------------------
+
+stan_data_4 <- list(
+  
+  "X" = X4,
+  
+  "y" = y,
+  
+  "N" = nrow(bf), # Numero de observaciones
+  "p" = ncol(X4) # numero de varaibles
+)
+
+#-----------------Inferencia para los beta_i-------------
+fit4 <- stan(file = 'ModeloLogistico.stan', data = stan_data_4, chains = 3)
+print(fit4)
+
+#------------ FACTOR DE BAYES ----------------------
+
+Beta.poste.M4 <- extract(fit4, "beta")
+Beta.poste.M4 <- Beta.poste.M4[[1]]
+dim(Beta.poste.M4)
+```
+
+
+## Análisis de convergencia:
+
+El Rhat es igual a 1, lo cual indica que las 3 cadenas han convergido de manera adecuada.
+
+### Diagnóstico
+
+```{r}
+#TRACE PLOTS
+traceplot(fit4, pars = "beta")
+```
+
+Se evidencia estacionariedad, se observa convergencia en todas y cada una de las variables incluidas, lo cual implica que un análisis sobre la muestra usada es adecuado.
+
+## Intervalos de probabilidad posterior
+
+A continuación, se grafican los HDI para el análisis de significancia de los parámetros, si el 0 se incluye en el intervalo $\beta_i$ es NO significativo.
+
+
+```{r}
+par(mfrow=c(3,3))
+for(i in 1:13){
+  #Inicio
+  HDI.interval.beta <- hdi(Beta.poste.M4[,i])
+  value1 <- HDI.interval.beta[1]
+  value2 <- HDI.interval.beta[2]
+  DENSITITY.BETA <- density(Beta.poste.M4[,i])
+  plot(DENSITITY.BETA, main = "Densidad Posterior",
+       xlab = parse(text=(paste0("beta[",i-1,"]"))))
+  DENSITITY.BETAy <- DENSITITY.BETA$y
+  DENSITITY.BETAx <- DENSITITY.BETA$x
+  # Lower and higher indices on the X-axis
+  l <- min(which(DENSITITY.BETAx >= value1))
+  h <- max(which(DENSITITY.BETAx < value2))
+  
+  polygon(c(DENSITITY.BETAx[c(l, l:h, h)]),
+          c(0, DENSITITY.BETAy[l:h], 0),
+          col =  "#CD8C95")
+}
+```
+
+De las gráficas de intervalos de probabilidad posterior podemos concluir:
+
+* Los parámetros $\beta_4$ incluye al 0 en su intervalo de probabilidad, por lo tanto **No es significativos**.
+
+* Los parámetros $\beta_0(Intercepto),~ \beta_1, ~\beta_2, ~\beta_3, ~\beta_5$ y $\beta_6$ **son significativos**. 
+
+# Resultados ajuste Bayesiano:
+
+
+```{r, echo=FALSE}
+knitr::include_graphics("Modelo4.jpg")
+```
+
+# ---------------------------------------------------------------------------------------
+
+# Modelo 5 con ajuste Bayesiano
+
+Se toman las variables significativas del Modelo 2:
+
+$$Modelo~5:Y \sim X_1 + X_4 + X_{11} + X_{12} $$
+## Matriz de diseño.
+
+```{r}
+#----------------MATRIZ DE DISEÑO-----------------------
+X5 = model.matrix(~ x1 + x4 + x11 + x12 ) 
+head(X5)
+```
+Tenemos 6 parámetros con el intercepto.
+
+```{r}
+#------------------- stan ------------------------------
+
+stan_data_5 <- list(
+  
+  "X" = X5,
+  
+  "y" = y,
+  
+  "N" = nrow(bf), # Numero de observaciones
+  "p" = ncol(X5) # numero de varaibles
+)
+
+#-----------------Inferencia para los beta_i-------------
+fit5 <- stan(file = 'ModeloLogistico.stan', data = stan_data_5, chains = 3)
+print(fit5)
+
+#------------ FACTOR DE BAYES ----------------------
+
+Beta.poste.M5 <- extract(fit5, "beta")
+Beta.poste.M5 <- Beta.poste.M5[[1]]
+dim(Beta.poste.M5)
+
+```
+
+## Análisis de convergencia:
+
+El Rhat es igual a 1, lo cual indica que las 3 cadenas han convergido de manera adecuada.
+
+### Diagnóstico
+
+```{r}
+#TRACE PLOTS
+traceplot(fit5, pars = "beta")
+```
+
+Se evidencia estacionariedad, se observa convergencia en todas y cada una de las variables incluidas, lo cual implica que un análisis sobre la muestra usada es adecuado.
+
+## Intervalos de probabilidad posterior
+
+A continuación, se grafican los HDI para el análisis de significancia de los parámetros, si el 0 se incluye en el intervalo $\beta_i$ es NO significativo.
+
+
+```{r}
+par(mfrow=c(3,3))
+for(i in 1:6){
+  #Inicio
+  HDI.interval.beta <- hdi(Beta.poste.M5[,i])
+  value1 <- HDI.interval.beta[1]
+  value2 <- HDI.interval.beta[2]
+  DENSITITY.BETA <- density(Beta.poste.M5[,i])
+  plot(DENSITITY.BETA, main = "Densidad Posterior",
+       xlab = parse(text=(paste0("beta[",i-1,"]"))))
+  DENSITITY.BETAy <- DENSITITY.BETA$y
+  DENSITITY.BETAx <- DENSITITY.BETA$x
+  # Lower and higher indices on the X-axis
+  l <- min(which(DENSITITY.BETAx >= value1))
+  h <- max(which(DENSITITY.BETAx < value2))
+  
+  polygon(c(DENSITITY.BETAx[c(l, l:h, h)]),
+          c(0, DENSITITY.BETAy[l:h], 0),
+          col =  "#B03060")
+}
+```
+
+De las gráficas de intervalos de probabilidad posterior podemos concluir:
+
+* No hay parámetros **No es significativos**.
+
+* Los parámetros $\beta_0(Intercepto),~ \beta_1, ~\beta_2, ~\beta_4, ~\beta_5, ~ \beta_6$ y $\beta_7$ **son significativos**. 
+
+# Resultados ajuste Bayesiano:
+
+
+```{r, echo=FALSE}
+knitr::include_graphics("Modelo5.jpg")
+```
+
+# ---------------------------------------------------------------------------------------
+
+# Comparación de modelos
+
+```{r}
+#Funcion de verosimilitud
+verosimilitud = function(Beta, X, y){  
+  res = ( (exp(X%*%Beta)/(1+exp(X%*%Beta)) )^y) * (( 1/(1+exp(X%*%Beta))  )^(1-y))
+  return(res)
+}
+
+
+#Verosimilitud marginal modelo 1
+vero.marginal1 = mean(sapply(1:dim(Beta.poste.M1)[1], 
+                             function(j) exp(sum(log(sapply(1:length(y), 
+                                                            function(i)
+                                                              {verosimilitud(Beta.poste.M1[j,],
+                                                                             X[i,], y[i])}))))))
+
+#Verosimilitud marginal modelo 2
+vero.marginal2 = mean(sapply(1:dim(Beta.poste.M2)[1], 
+                             function(j) exp(sum(log(sapply(1:length(y),
+                                                            function(i){verosimilitud(Beta.poste.M2[j,],
+                                                                                      X2[i,], y[i])}))))))
+
+
+#Verosimilitud marginal modelo 3
+
+vero.marginal3 = mean(sapply(1:dim(Beta.poste.M3)[1], 
+                             function(j) exp(sum(log(sapply(1:length(y),
+                                                            function(i){verosimilitud(Beta.poste.M3[j,],
+                                                                                      X3[i,], y[i])}))))))
+
+#Verosimilitud marginal modelo 4
+
+vero.marginal4 <- mean(sapply(1:dim(Beta.poste.M4)[1], 
+                             function(j) exp(sum(log(sapply(1:length(y),
+                                                            function(i){verosimilitud(Beta.poste.M4[j,],
+                                                                                      X4[i,], y[i])}))))))
+
+#Verosimilitud marginal modelo 5
+
+vero.marginal5 <- mean(sapply(1:dim(Beta.poste.M5)[1], 
+                             function(j) exp(sum(log(sapply(1:length(y),
+                                                            function(i){verosimilitud(Beta.poste.M5[j,],
+                                                                                      X5[i,], y[i])}))))))
+
+```
+
+# 1. BF - Factores de Bayes
+
+El Factor de Bayes se calcula como la proporción de la verosimilitud marginal de los datos bajo un modelo en relación con otro modelo.
+
+Cada modelo tiene verosimilitud dada por $f_i(y|\theta_i)$, donde $\theta_i$ tiene densidad $f(\theta_i)$, para $i = 1, ... K$, con $k=5$ modelos candidatos. Entonces, el factor de Bayes esta dado por:
+
+$$B_{ij}=\frac{m_i(y)}{m_j(y)}=\frac{ \int f_i(y|\theta_i) f(\theta_i) d\theta }{\int f_j(y|\theta_j) f(\theta_j) d\theta }$$
+```{r}
+
+B12 <- vero.marginal1/vero.marginal2
+
+B13 <- vero.marginal1/vero.marginal3
+
+B14 <- vero.marginal1/vero.marginal4
+
+B15 <- vero.marginal1/vero.marginal5
+
+B23 <- vero.marginal2/vero.marginal3
+
+B24 <- vero.marginal2/vero.marginal4
+
+B25 <- vero.marginal2/vero.marginal5
+
+B34 <- vero.marginal3/vero.marginal4
+
+B35 <- vero.marginal3/vero.marginal5
+
+B45 <- vero.marginal4/vero.marginal5
+
+BF <- data.frame(BF = c("B12", "B13", "B14", "B15", "B23", "B24", "B25", "B34", "B35", "B45"),
+                 resultado = round(c(B12, B13, B14, B15, B23, B24, B25, B34, B35, B45),2))
+
+print(BF)
+```
+En términos de comparación, un factor de Bayes mayor a 1 indica evidencia a favor del modelo en el numerador, mientras que un factor de Bayes menor a 1 indica evidencia a favor del modelo en el denominador. 
+
+```{r}
+knitr::include_graphics("BF.jpg")
+```
+
+
+
+Después de comparar modelos por Factor de Bayes, *el Modelo 4 es el mejor*.
+
+# 2. $DICs$
+
+El DIC (Deviance Information Criterion), proporciona una medida de la calidad predictiva del modelo, este método se usa para comparar modelos. Es una versión bayesiana del criterio de información Akaike (AIC). 
+
+El DIC esta dado por:
+
+
+$$DIC=-2log(f(y|\hat{\theta}_{BAYES}))+2P_{DIC}$$
+Donde $\hat{\theta}_{BAYES} = E[\theta|y]$ y $P_{DIC}$ el numero efectivo de parametros.
+
+```{r}
+# DIC M1
+#log_verosimilitud
+log_vero <- sum(log(plogis(y*Beta.poste.M1)))
+
+##log_verosimilitud esperada
+log_vero_E <- mean(sapply(1:length(Beta.poste.M1), function(j) {
+  sum(log(plogis(y * Beta.poste.M1[j])))}))
+
+DIC_M1 <- -2 * log_vero + 2 * (log_vero - log_vero_E)
+DIC_M1
+
+
+# DIC M2
+#log_verosimilitud
+log_vero2 <- sum(log(plogis(y*Beta.poste.M2)))
+
+##log_verosimilitud esperada
+log_vero2_E <- mean(sapply(1:length(Beta.poste.M2), function(j) {
+  sum(log(plogis(y * Beta.poste.M2[j])))}))
+
+DIC_M2 <- -2 * log_vero2 + 2 * (log_vero2 - log_vero2_E)
+DIC_M2
+
+# DIC M3
+#log_verosimilitud
+log_vero3 <- sum(log(plogis(y*Beta.poste.M3)))
+
+##log_verosimilitud esperada
+log_vero3_E <- mean(sapply(1:length(Beta.poste.M3), function(j) {
+  sum(log(plogis(y * Beta.poste.M3[j])))}))
+DIC_M3 <- -2 * log_vero3 + 2 * (log_vero3 - log_vero3_E)
+DIC_M3
+
+
+# DIC M4
+#log_verosimilitud
+log_vero4 <- sum(log(plogis(y*Beta.poste.M4)))
+
+##log_verosimilitud esperada
+log_vero4_E <- mean(sapply(1:length(Beta.poste.M4), function(j) {
+  sum(log(plogis(y * Beta.poste.M4[j])))}))
+
+DIC_M4 <- -2 * log_vero4 + 2 * (log_vero4 - log_vero4_E)
+DIC_M4
+
+# DIC M5
+#log_verosimilitud
+log_vero5 <- sum(log(plogis(y*Beta.poste.M5)))
+
+##log_verosimilitud esperada
+log_vero5_E <- mean(sapply(1:length(Beta.poste.M5), function(j) {
+  sum(log(plogis(y * Beta.poste.M5[j])))}))
+
+DIC_M5 <- -2 * log_vero5 + 2 * (log_vero5 - log_vero5_E)
+DIC_M5
+```
+
+
+
+El mejor modelo será el que tenga el $DIC$ más bajo, teniendo en cuenta que:
+
+* Las diferencias de más de 10 en el $DIC$ permiten descartar el modelo con mayor $DIC$
+
+* Las diferencias entre 5 y 10 se consideran sustanciales
+
+* Si la diferencia es menor a 5, los modelos producen predicciones muy diferentes.
+
+```{r}
+DIC <- data.frame(Modelo = c("Modelo 1", "Modelo 2", "Modelo 3", "Modelo 4", "Modelo 5"),
+                  DIC = c(DIC_M1, DIC_M2, DIC_M3, DIC_M4, DIC_M5))
+DIC
+```
+## Diferencia entre los $DIC_{ij}$
+
+```{r, echo=FALSE}
+knitr::include_graphics("DIC_.jpg")
+```
+Como las diferencias entre los DIC de cada modelo es mayor a 10, ENTONCES, se escoge el modelo con menor DIC, el modelo 1 seguido por el modelo 4 son los de menor DIC.
+
+
+
+# 3. AUC - Curva ROC
+
+El AUC (área bajo la curva) mide la capacidad discriminativa del modelo, es decir, que tan bien puede diferenciar entre los menores hospitalizados y los que no lo son. En otras palabras, el AUC es la probabilidad de clasificar correctamente a un par de individuos (hospitalizado, no hospitalizado).
+
+
+```{r}
+
+## PREDICCIONES DE LOS MODELOS
+
+Py1.X = sapply(1:dim(X)[1], function(j){median(sapply(1:dim(Beta.poste.M1)[1], function(i){exp(X[j,]%*%Beta.poste.M1[i,])/ (1 + exp(X[j,]%*%Beta.poste.M1[i,]))}))})
+
+Py2.X = sapply(1:dim(X2)[1], function(j){median(sapply(1:dim(Beta.poste.M2)[1], function(i){exp(X2[j,]%*%Beta.poste.M2[i,])/ (1 + exp(X2[j,]%*%Beta.poste.M2[i,]))}))})
+
+Py3.X = sapply(1:dim(X3)[1], function(j){median(sapply(1:dim(Beta.poste.M3)[1], function(i){exp(X3[j,]%*%Beta.poste.M3[i,])/ (1 + exp(X3[j,]%*%Beta.poste.M3[i,]))}))})
+
+Py4.X = sapply(1:dim(X4)[1], function(j){median(sapply(1:dim(Beta.poste.M4)[1], function(i){exp(X4[j,]%*%Beta.poste.M4[i,])/ (1 + exp(X4[j,]%*%Beta.poste.M4[i,]))}))})
+
+Py5.X = sapply(1:dim(X5)[1], function(j){median(sapply(1:dim(Beta.poste.M5)[1], function(i){exp(X5[j,]%*%Beta.poste.M5[i,])/ (1 + exp(X5[j,]%*%Beta.poste.M5[i,]))}))})
+
+
+```
+
+
+```{r}
+## CURVA ROC MODELO 1, 2, 3 y 4
+library(ROCR)
+```
+
+
+Se minimiza la sensibilidad en la curva ROC, es decir la minimización de los falsos negativos, para tratar de evitar que los casos positivos sean clasificados incorrectamente como negativos, en otras palabras minimizar que un niño con DNT aguda que deba ser hospitalizado sea hospitalizado, lo cual implica aceptar mayor numero de falsos positivos, es decir niños con DNT aguda que no se deben ser hospitalizados, son hospitalizados, (se acepta un mayor número de falsos positivos).
+
+```{r}
+# CURVA ROC M1
+ROCR.simple = list(predicciones = Py1.X, labels = y)
+df <- data.frame(ROCR.simple)
+pred <- prediction(df$predicciones, df$labels) # df$labels ( valores reales correspondientes a las predicciones)
+perf <- performance(pred,"tpr","fpr") #"tpr" (tasa de verdaderos positivos),   "fpr"(falsos positivos)
+
+#_________PUNTO DE CORTE OPTIMO____________
+
+# Punto de corte Optimo <- minimiza la sensibilidad 
+cost.perf <- performance(pred, measure ="cost")
+opt.cut <- pred@cutoffs[[1]][which.min(cost.perf@y.values[[1]])]
+
+#coordenadas del punto de corte Optimo
+px <- perf@x.values[[1]][which.min(cost.perf@y.values[[1]])]
+py <- perf@y.values[[1]][which.min(cost.perf@y.values[[1]])]
+
+
+#AREA BAJO LA CURVA
+AUC       <- performance(pred,measure="auc")
+AUCaltura <- AUC@y.values
+AUC1 <- paste("AUC:", round(AUCaltura[[1]],3)) 
+POP1 <- paste("Punto de corte Optimo:",round(opt.cut,3))
+
+
+plot(perf,colorize=TRUE,type="l", main = "Modelo 1", sub = POP1)
+abline(a=0,b=1,col="blue")
+points(px,py, pch=20, col="purple")
+text(labels = AUC1, pos = 2,  x = 0.3, y = 0.9)
+
+
+```
+```{r}
+# CURVA ROC M2
+
+ROCR.simple2 = list(predicciones2 = Py2.X, labels = y)
+df2 <- data.frame(ROCR.simple2)
+pred2 <- prediction(df2$predicciones2, df2$labels)
+perf2 <- performance(pred2,"tpr","fpr")
+
+#_________PUNTO DE CORTE OPTIMO____________
+
+# Punto de corte Optimo <- minimiza la sensibilidad 
+cost.perf2 <- performance(pred2, measure ="cost")
+opt.cut2 <- pred2@cutoffs[[1]][which.min(cost.perf2@y.values[[1]])]
+
+#coordenadas del punto de corte Optimo
+px2 <- perf2@x.values[[1]][which.min(cost.perf2@y.values[[1]])]
+py2 <- perf2@y.values[[1]][which.min(cost.perf2@y.values[[1]])]
+
+
+#AREA BAJO LA CURVA
+AUC2       <- performance(pred2,measure="auc")
+AUCaltura2 <- AUC2@y.values
+AUC2_ <- paste("AUC:", round(AUCaltura2[[1]],3)) 
+POP2_ <- paste("Punto de corte Optimo:",round(opt.cut2,3))
+
+# GRAFICO
+plot(perf2,colorize=TRUE,type="l", main = "Modelo 2", sub = POP2_)
+abline(a=0,b=1,col="blue")
+points(px2,py2, pch=20, col="purple")
+text(labels = AUC2_, pos = 2,  x = 0.3, y = 0.9)
+```
+
+
+```{r}
+# CURVA ROC M3
+
+ROCR.simple3 = list(predicciones3 = Py3.X, labels = y)
+df3 <- data.frame(ROCR.simple3)
+pred3 <- prediction(df3$predicciones3, df3$labels)
+perf3 <- performance(pred3,"tpr","fpr")
+
+
+#_________PUNTO DE CORTE OPTIMO____________
+
+# Punto de corte Optimo <- minimiza la sensibilidad 
+cost.perf3 <- performance(pred3, measure ="cost")
+opt.cut3 <- pred3@cutoffs[[1]][which.min(cost.perf3@y.values[[1]])]
+
+#coordenadas del punto de corte Optimo
+px3 <- perf3@x.values[[1]][which.min(cost.perf3@y.values[[1]])]
+py3 <- perf3@y.values[[1]][which.min(cost.perf3@y.values[[1]])]
+
+
+#AREA BAJO LA CURVA
+AUC3      <- performance(pred3,measure="auc")
+AUCaltura3 <- AUC3@y.values
+AUC3_ <- paste("AUC:", round(AUCaltura3[[1]],3)) 
+POP3_ <- paste("Punto de corte Optimo:",round(opt.cut3,3))
+
+# GRAFICO
+
+plot(perf3,colorize=TRUE,type="l",  main = "Modelo 3", sub = POP3_)
+abline(a=0,b=1,col="blue")
+
+points(px3,py3, pch=20, col="purple")
+text(labels = AUC3_, pos = 2,  x = 0.3, y = 0.9)
+
+```
+
+
+
+```{r}
+# CURVA ROC M4
+
+ROCR.simple4 = list(predicciones4 = Py4.X, labels = y)
+df4 <- data.frame(ROCR.simple4)
+pred4 <- prediction(df4$predicciones4, df4$labels)
+perf4 <- performance(pred4,"tpr","fpr")
+
+#_________PUNTO DE CORTE OPTIMO____________
+
+# Punto de corte Optimo <- minimiza la sensibilidad 
+cost.perf4 <- performance(pred4, measure ="cost")
+opt.cut4 <- pred4@cutoffs[[1]][which.min(cost.perf4@y.values[[1]])]
+
+#coordenadas del punto de corte Optimo
+px4 <- perf4@x.values[[1]][which.min(cost.perf4@y.values[[1]])]
+py4 <- perf4@y.values[[1]][which.min(cost.perf4@y.values[[1]])]
+
+
+#AREA BAJO LA CURVA
+AUC4      <- performance(pred4,measure="auc")
+AUCaltura4 <- AUC4@y.values
+AUC4_ <- paste("AUC:", round(AUCaltura4[[1]],3)) 
+POP4_ <- paste("Punto de corte Optimo:",round(opt.cut4,3))
+
+
+# GRAFICO
+plot(perf4,colorize=TRUE,type="l",  main = "Modelo 4", sub = POP4_)
+abline(a=0,b=1,col="blue")
+
+points(px4,py4, pch=20, col="purple")
+text(labels = AUC4_, pos = 2,  x = 0.3, y = 0.9)
+```
+
+```{r}
+# CURVA ROC M5
+
+ROCR.simple5 = list(predicciones5 = Py5.X, labels = y)
+df5 <- data.frame(ROCR.simple5)
+pred5 <- prediction(df5$predicciones5, df5$labels)
+perf5 <- performance(pred5,"tpr","fpr")
+
+#_________PUNTO DE CORTE OPTIMO____________
+
+# Punto de corte Optimo <- minimiza la sensibilidad 
+cost.perf5 <- performance(pred5, measure ="cost")
+opt.cut5 <- pred5@cutoffs[[1]][which.min(cost.perf5@y.values[[1]])]
+
+#coordenadas del punto de corte Optimo
+px5 <- perf5@x.values[[1]][which.min(cost.perf5@y.values[[1]])]
+py5 <- perf5@y.values[[1]][which.min(cost.perf5@y.values[[1]])]
+
+
+#AREA BAJO LA CURVA
+AUC5      <- performance(pred5,measure="auc")
+AUCaltura5 <- AUC5@y.values
+AUC5_ <- paste("AUC:", round(AUCaltura5[[1]],3)) 
+POP5_ <- paste("Punto de corte Optimo:",round(opt.cut5,3))
+
+
+# GRAFICO
+plot(perf5,colorize=TRUE,type="l",  main = "Modelo 5", sub = POP5_)
+abline(a=0,b=1,col="blue")
+
+points(px5,py5, pch=20, col="purple")
+text(labels = AUC5_, pos = 2,  x = 0.3, y = 0.9)
+```
+Cuando se comparan modelos utilizando el AUC, un modelo con un AUC más cercano a 1 se considera mejor en términos de su capacidad para clasificar correctamente las instancias positivas y negativas.
+
+```{r}
+resumenAUC <- data.frame(Modelo = c("Modelo 1", "Modelo 2", "Modelo 3", "Modelo 4", "Modelo 5"),
+                         AUC = c(AUCaltura[[1]], AUCaltura2[[1]], AUCaltura3[[1]], AUCaltura4[[1]], AUCaltura5[[1]]))
+resumenAUC
+```
+
+El modelo 1 y modelo 4 son los que mayor área bajo la curva tienen, respectivamente.
+
+
+# Resumen comparación de modelos
+
+De la comparación de modelos por factores de Bayes el mejor modelo es el 4. El de mayor área bajo la curva - AUC es el Modelo 1 seguido por el Modelo 4, con una diferencia minima. El de menor DIC fue el Modelo 1 y 4, respectivament. Por principio de parsimonia escogeremos el Modelo 4, dado que tiene menor número de variables.
+
+## Interpretación de parámetros significativos Modelo 4
+
+Se realiza el cálculo de la exponencial de las estimaciones de los $\beta_i$ estimados, dado que el predictor lineal esta dado por:
+
+
+$$Logit(\theta_i)=log\left( \frac{\theta_i}{1-\theta_i}\right)=X\beta = log(odds)$$
+
+$$odds = e^{\beta X}$$
+```{r, echo=FALSE}
+knitr::include_graphics("Sig_M4.jpg")
+```
+
+* Las niñas tienen una reducción del 30% en las chances de NO ser hospitalizadas en comparación con los niños (género masculino).
+
+* Los menores de 5 años que pertenecen al régimen de seguridad social subsidiado presentan una reducción del 40% en los chances de NO ser hospitalizados en comparación a los pertenecientes al régimen contributivo.
+
+* Los menores de 5 años sin esquema de vacunación tienen una reducción del 62% de NO ser hospitalizados en comparación a los que si tienen esquema de vacunación.
+
+* Por un aumento unitario en el peso actual de un menor de 5 años, la chance de NO ser hospitalizado se aumenta en un   290 %.
+
+* Por un aumento unitario en la talla del menor, la chance de NO ser hospitalizado se reduce  un 19%. 
+
+
+
+
+
+
